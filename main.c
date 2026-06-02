@@ -55,12 +55,14 @@ typedef struct {
 
 
 
-void spawnEnemies(enemies* Enemies, timer, intervals){
-    check_if_data_exists
-    no malloc
-    yes check intervals{
-       yes realloc
-      }
+void spawnEnemies(enemy* Enemies, int numenemies, int timer, int numintervals, int* intervals){
+    for(int i = 0; i < numintervals; i++){
+        if(timer % intervals[i] == 0){
+            numenemies++;
+
+            realloc(Enemies, numenemies*sizeof(enemy));
+            Enemies[numenemies - 1].type = i;
+        }
     }
 }
 
