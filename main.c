@@ -25,6 +25,9 @@ Ele introduz conceitos fundamentais de desenvolvimento de jogos:
 #define SPRITE_COLS 5
 #define SPRITE_ROWS 8
 
+#define ENEMY_TYPES 3
+#define DEBUG() printf()
+
 // Enumeração para facilitar a leitura do vetor de teclas
 enum DIRECOES { CIMA, BAIXO, ESQUERDA, DIREITA };
 
@@ -45,7 +48,7 @@ typedef struct {
 
     int HP;
 
-    int type; //from 1 to 4 (used to compute damage dealt to the player/HP)
+    int type; //from 0 to 3 (used to compute damage dealt to the player/HP)
 } enemy;
 
 typedef struct {
@@ -54,18 +57,27 @@ typedef struct {
 } projectile;
 
 
+void spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals){
+    int num = *numenemies;
+    for(int i = 0; i < 3; i++){
 
-void spawnEnemies(enemy* Enemies, int numenemies, int timer, int numintervals, int* intervals){
-    for(int i = 0; i < numintervals; i++){
         if(timer % intervals[i] == 0){
-            numenemies++;
+            num++;
 
-            realloc(Enemies, numenemies*sizeof(enemy));
-            Enemies[numenemies - 1].type = i;
+            Enemies  = realloc(Enemies, num*sizeof(enemy));
+            Enemies[num-1].type = i;
+
         }
+        else continue;
     }
+    *numenemies = num;
 }
 
+
+void initEnemies(){
+
+}
+/*
 void spawnProjectiles(){
     check_if_data_exists
     yes check intervals
@@ -81,7 +93,7 @@ void collisionHandle(){
     yes subtract_HP, despawn_projectile
     no return
 }
-
+*/
 
 
 
@@ -128,6 +140,10 @@ int main() {
     if (!sprite_sheet) { printf("Erro ao carregar sprite.\n"); return -1; }
     al_convert_mask_to_alpha(sprite_sheet, al_map_rgb(255, 0, 255));
 
+    ALLEGRO_BITMAP *asteroid = al_load_bitmap("../../sprites/asteroid.jpg");
+    if (!asteroid) { printf("Erro ao carregar sprite.\n"); return -1; }
+    al_convert_mask_to_alpha(asteroid, al_map_rgb(255, 0, 255));
+
     // 3. Inicialização de Variáveis de Controle
     bool running = true;
     bool redraw = true;
@@ -150,6 +166,16 @@ int main() {
     p1.delay = 0.15;      // 150ms entre cada frame de animação
 
     al_start_timer(timer);
+
+    int intervals[] = {10, 12, 13};
+
+    int numenemies = 1;
+
+    enemy* enemies = NULL;
+    enemies = malloc(sizeof(enemy));
+
+    spawnEnemies(enemies, &numenemies, 0, intervals);
+
 
     // 4. Loop Principal
     while (running) {
@@ -247,6 +273,8 @@ int main() {
             int sprite_y = p1.movement * SPRITE_SIZE;
             al_draw_bitmap_region(sprite_sheet, sprite_x, sprite_y, SPRITE_SIZE, SPRITE_SIZE,
                                   p1.x, p1.y, 0);
+
+            al_draw_bitmap(asteroid, 5, 50, 0);
 
             al_flip_display();
         }
