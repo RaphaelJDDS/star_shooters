@@ -57,6 +57,16 @@ typedef struct {
 } projectile;
 
 
+int randomwRange(int min, int max) {
+    if (min > max) { // Swap if range is reversed
+        int temp = min;
+        min = max;
+        max = temp;
+    }
+    return rand() % (max - min + 1) + min;
+}
+
+
 void spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals){
     int num = *numenemies;
     for(int i = 0; i < 3; i++){
@@ -71,37 +81,46 @@ void spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals){
         else continue;
     }
     *numenemies = num;
+    return;
 }
 
 
-void initEnemies(){
+void initEnemies(enemy* Enemies, int* numenemies){
+    int num  = *numenemies;
+    for(int i = 0; i < num; i++){
+            if(Enemies[i].vy == 0){
+            Enemies[i].xpos = randomwRange(0, WIDTH);
+            Enemies[i].ypos = HEIGHT - 20;
+            Enemies[i].vx = randomwRange(HEIGHT, HEIGHT)/6;
+            Enemies[i].vy = HEIGHT/4;
 
+            switch (Enemies[i].type){
+                case 0: Enemies[i].HP = 20;
+                case 1: Enemies[i].HP = 40;
+                case 2: Enemies[i].HP = 70;
+                case 3: Enemies[i].HP = 100;
+            }
+        }
+    }
+    return;
 }
-/*
-void spawnProjectiles(){
-    check_if_data_exists
-    yes check intervals
-    no maloc projectile
+
+int moveEnemies(enemy* Enemies, int* numenemies){
+    int num  = *numenemies;
+    for(int i = 0; i < num; i++){
+        Enemies[i].xpos += Enemies[i].vx;
+        Enemies[i].ypos += Enemies[i].vy;
+    }
+    return 0;
 }
 
-bool collisionDetector(){
-    for each projectile, check if there is an enemy at its position
+void drawEnemies(enemy* Enemies, int* numenemies, ALLEGRO_BITMAP* asteroid){
+    int num  = *numenemies;
+    for(int i = 0; i < num; i++){
+        al_draw_bitmap(asteroid, Enemies[i].xpos/WIDTH, Enemies[i].ypos/HEIGHT, 0);
+    }
+    return;
 }
-
-void collisionHandle(){
-    collisionDetector()
-    yes subtract_HP, despawn_projectile
-    no return
-}
-*/
-
-
-
-
-
-
-
-
 
 
 int main() {
@@ -167,14 +186,17 @@ int main() {
 
     al_start_timer(timer);
 
-    int intervals[] = {10, 12, 13};
 
-    int numenemies = 1;
+
+    int intervals[] = {1000, 12000, 13000};
+    int numenemies = 0;
+    int time = 0;
 
     enemy* enemies = NULL;
     enemies = malloc(sizeof(enemy));
 
     spawnEnemies(enemies, &numenemies, 0, intervals);
+    initEnemies(enemies, &numenemies);
 
 
     // 4. Loop Principal
@@ -251,6 +273,12 @@ int main() {
                 redraw = true; // Informa que a lógica terminou e podemos desenhar
                 break;
         }
+        time++;
+        spawnEnemies(enemies, &numenemies, time, intervals);
+        initEnemies(enemies, &numenemies);
+
+        moveEnemies(enemies, &numenemies);
+
 
         // 5. Redesenho da Tela
         if (redraw && al_is_event_queue_empty(queue)) {
@@ -274,16 +302,19 @@ int main() {
             al_draw_bitmap_region(sprite_sheet, sprite_x, sprite_y, SPRITE_SIZE, SPRITE_SIZE,
                                   p1.x, p1.y, 0);
 
-            al_draw_bitmap(asteroid, 5, 50, 0);
+            drawEnemies(enemies, &numenemies, asteroid);
 
             al_flip_display();
         }
     }
 
     // 6. Limpeza de Memória
+    free(enemies);
+
     al_destroy_sample_instance(sample_instance);
     al_destroy_sample(sample);
     al_destroy_bitmap(sprite_sheet);
+    al_destroy_bitmap(asteroid);
     al_destroy_font(font);
     al_destroy_timer(timer);
     al_destroy_event_queue(queue);
