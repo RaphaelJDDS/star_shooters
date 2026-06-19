@@ -49,12 +49,20 @@ typedef struct {
     int HP;
 
     int type; //from 0 to 3 (used to compute damage dealt to the player/HP)
-} enemy;
+    int dmg[4];
+} Enemy;
 
 typedef struct {
     float xpos, ypos;
-    float vx, vy;
-} projectile;
+    float vy;
+} Projectile;
+
+typedef struct {
+    float xpos, ypos; //fixed in the y coord
+    float vx;
+
+    float HP;
+} Player;
 
 
 float randomwRange(int min, int max) {
@@ -66,8 +74,7 @@ float randomwRange(int min, int max) {
     return (float)(rand() % (max - min + 1) + min);
 }
 
-
-enemy* spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals, int* old_num){
+Enemy* spawnEnemies(Enemy* enemies, int* numenemies, int timer, int* intervals, int* old_num){
     int num = *numenemies;
     *old_num = *numenemies;
     for(int i = 0; i < 3; i++){
@@ -75,67 +82,78 @@ enemy* spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals, 
         if(timer % intervals[i] == 0){
             num++;
 
-            enemy *temp = realloc(Enemies, num * sizeof(enemy));
+            Enemy *temp = realloc(enemies, num * sizeof(Enemy));
 
             if(temp == NULL)
             {
                 printf("ALLOCATION FAILURE");
-                return Enemies;
+                return enemies;
             }
             else
             {
-                Enemies = temp;
+                enemies = temp;
             }
 
-            Enemies[num-1].type = i;
+            enemies[num-1].type = i;
         }
         else continue;
     }
     *numenemies = num;
-    return Enemies;
+    return enemies;
 }
 
-
-enemy* initEnemies(enemy* Enemies, int* numenemies, int* old_num){
+Enemy* initEnemies(Enemy* enemies, int* numenemies, int* old_num){
     int num  = *numenemies;
     int i = num-1;//last element
 
         for(int i = *old_num; i < num; i++){//random vars
 
-            Enemies[i].xpos = randomwRange(0, WIDTH);
-            Enemies[i].ypos = 20.0f;
-            Enemies[i].vx = randomwRange(HEIGHT, -HEIGHT)/6.0f;
-            Enemies[i].vy = (float)HEIGHT/4;
+            enemies[i].xpos = randomwRange(0, WIDTH);
+            enemies[i].ypos = 20.0f;
+            enemies[i].vx = randomwRange(HEIGHT, -HEIGHT)/6.0f;
+            enemies[i].vy = (float)HEIGHT/4;
 
-            switch (Enemies[i].type){//HP by type
+            switch (enemies[i].type){//HP by type
                 case 0:
-                    Enemies[i].HP = 20;
+                    enemies[i].HP = 20;
                     break;
                 case 1:
-                    Enemies[i].HP = 40;
+                    enemies[i].HP = 40;
                     break;
                 case 2:
-                    Enemies[i].HP = 70;
+                    enemies[i].HP = 70;
                     break;
                 case 3:
-                    Enemies[i].HP = 100;
+                    enemies[i].HP = 100;
                     break;
             }
         }
-    return Enemies;
+    return enemies;
 }
 
-enemy* despawnEnemies(enemy* Enemies, int* numenemies){
+Enemy* despawnEnemies(Enemy* enemies, int* numenemies, Player* player_ptr, int* dmg_arr){
     int write = 0;
+    Player player = *player_ptr;
     for(int read = 0; read < *numenemies; read++){
-        //idea: maps a hypothetical array of donotremove[] onto enemies, such that Enemies[i] is the ith valid enemy
+        //idea: maps a hypothetical array of donotremove[] onto enemies, such that enemies[i] is the ith valid Enemy
         bool remove = false;
+        bool touched_ground = false;
 
-        if(Enemies[read].HP <= 0) remove = true;
-        if(Enemies[read].ypos > 480) remove = true;
-        if(remove) printf("removed! numenemies = %d", *numenemies);
+        if(enemies[read].HP <= 0) remove = true;
+        if(enemies[read].ypos > 480){
+            remove = true;
+            touched_ground = true;
+        }
+        if(remove){
+            printf("removed! numenemies = %d", *numenemies);
+        }
+
+        if(touched_ground){//"intron functionality"
+            player.HP -= dmg_arr[enemies[read].type];
+        }
+
         if(!remove){
-            Enemies[write] = Enemies[read];
+            enemies[write] = enemies[read];
             write++;
         }
     }
@@ -143,35 +161,116 @@ enemy* despawnEnemies(enemy* Enemies, int* numenemies){
 
     if(write == 0)
     {
-        free(Enemies);
+        free(enemies);
         return NULL;
     }
     //truncates the "fat" out
-    enemy *tmp = realloc(Enemies, write * sizeof(enemy));
-    if(tmp)
-        Enemies = tmp;
+    Enemy *tmp = realloc(enemies, write * sizeof(Enemy));
+    if(tmp) enemies = tmp;
 
-    return Enemies;
+    *player_ptr = player;
+    return enemies;
 }
 
-int moveEnemies(enemy* Enemies, int* numenemies){
+int moveEnemies(Enemy* enemies, int* numenemies){
     int num  = *numenemies;
     for(int i = 0; i < num; i++){
-        Enemies[i].xpos += Enemies[i].vx/60;
-        Enemies[i].ypos += Enemies[i].vy/60;
-        printf("%f\n", Enemies[i].ypos);
+        enemies[i].xpos += enemies[i].vx/60;
+        enemies[i].ypos += enemies[i].vy/60;
+
+        if(enemies[i].xpos < 0) enemies[i].xpos += WIDTH;
+        if(enemies[i].xpos > WIDTH) enemies[i].xpos -= WIDTH;
     }
     return 0;
 }
 
-void drawEnemies(enemy* Enemies, int* numenemies, ALLEGRO_BITMAP* asteroid){
+void drawEnemies(Enemy* enemies, int* numenemies, ALLEGRO_BITMAP* asteroid){
     int num  = *numenemies;
     for(int i = 0; i < num; i++){
-        al_draw_bitmap(asteroid, Enemies[i].xpos, Enemies[i].ypos, 0);
+        al_draw_bitmap(asteroid, enemies[i].xpos, enemies[i].ypos, 0);
     }
     return;
 }
 
+Player initPlayer(){
+    Player player;
+    player.xpos = WIDTH/2;
+    player.ypos = HEIGHT-20;
+    player.vx = WIDTH/10;
+
+    player.HP = 100;
+    return player;
+}
+
+void drawPlayer(Player player, ALLEGRO_BITMAP* spaceship){
+    al_draw_bitmap(spaceship, player.xpos, player.ypos, 0);
+    return;
+}
+
+void movePlayer(Player* player_ptr, bool* keys){
+    int coeff = keys[3] - keys[2];//masking for convenience. +1 for right, -1 for left, 0 for both
+    Player player = *player_ptr;
+    player.xpos += coeff*player.vx/30;
+    //player.ypos += player.vy/60; //useless lol
+
+    if(player.xpos < 0) player.xpos += WIDTH;
+    if(player.xpos > WIDTH) player.xpos -= WIDTH;
+
+    *player_ptr = player;
+    return;
+}
+
+Projectile* spawnShells(Projectile* projectiles, int* numshells, int* old_num, bool* keys){
+    int num = *numshells;
+    *old_num = *numshells;
+    if(keys[0]){
+        num++;
+
+        Projectile *temp = realloc(projectiles, num * sizeof(Projectile));
+
+        if(temp == NULL){
+            printf("ALLOCATION FAILURE");
+            return projectiles;
+        }
+        else{
+            projectiles = temp;
+        }
+    }
+
+    *numshells = num;
+    printf("\nlebendig!\n");
+    return projectiles;
+}
+
+Projectile* initShells(Projectile* projectiles, Player player, int* numshells, int* old_num){
+    int num  = *numshells;
+    int i = num-1;//last element
+    float xpos = player.xpos;
+
+        for(int i = *old_num; i < num; i++){//random vars
+            projectiles[i].xpos = xpos;
+            projectiles[i].ypos = HEIGHT - 20.0f;
+            projectiles[i].vy = -(float)HEIGHT/2;
+        }
+    return projectiles;
+}
+
+int moveShells(Projectile* projectiles, int* numshells){
+    int num  = *numshells;
+    for(int i = 0; i < num; i++){
+        projectiles[i].ypos += projectiles[i].vy/30;
+        printf("%f\n", projectiles[i].ypos);
+    }
+    return 0;
+}
+
+void drawShells(Projectile* projectiles, int* numshells, ALLEGRO_BITMAP* shell){
+    int num  = *numshells;
+    for(int i = 0; i < num; i++){
+        al_draw_bitmap(shell, projectiles[i].xpos, projectiles[i].ypos, 0);
+    }
+    return;
+}
 
 int main() {
     // 1. Inicialização dos módulos do Allegro
@@ -213,6 +312,14 @@ int main() {
     if (!asteroid) { printf("Erro ao carregar sprite.\n"); return -1; }
     al_convert_mask_to_alpha(asteroid, al_map_rgb(255, 0, 255));
 
+    ALLEGRO_BITMAP *spaceship = al_load_bitmap("../../sprites/gplayer_ship.png");
+    if (!spaceship) { printf("Erro ao carregar sprite.\n"); return -1; }
+    al_convert_mask_to_alpha(spaceship, al_map_rgb(255, 0, 255));
+
+    ALLEGRO_BITMAP *shell = al_load_bitmap("../../sprites/projectile.jpg");
+    if (!shell) { printf("Erro ao carregar sprite.\n"); return -1; }
+    al_convert_mask_to_alpha(shell, al_map_rgb(255, 0, 255));
+
     // 3. Inicialização de Variáveis de Controle
     bool running = true;
     bool redraw = true;
@@ -240,14 +347,21 @@ int main() {
 
     int intervals[] = {10, 12, 13};
     int numenemies = 0;
+    int numshells = 0;
+    int old_numshells;
     int time = 0;
 
-    enemy* enemies = NULL;
-    enemies = malloc(sizeof(enemy));
-    int old_num = 0;
+    Enemy* enemies = NULL;
+    enemies = malloc(sizeof(Enemy));
+    int old_numenemies = 0;
 
-    enemies = spawnEnemies(enemies, &numenemies, 0, intervals, &old_num);
-    enemies = initEnemies(enemies, &numenemies, &old_num);
+    Player player = initPlayer();
+    Projectile* projectiles = NULL;
+    projectiles = malloc(sizeof(Projectile));
+
+    enemies = spawnEnemies(enemies, &numenemies, 0, intervals, &old_numenemies);
+    enemies = initEnemies(enemies, &numenemies, &old_numenemies);
+    int dmg_arr[] = {10, 20, 40};
 
 
     // 4. Loop Principal
@@ -310,6 +424,9 @@ int main() {
                 if (p1.y < 0) p1.y = 0;
                 if (p1.y > HEIGHT - SPRITE_SIZE) p1.y = HEIGHT - SPRITE_SIZE;
 
+                movePlayer(&player, teclas);
+                moveEnemies(enemies, &numenemies);
+                moveShells(projectiles, &numshells);
                 // Lógica de Animação: Só avança os frames se o personagem estiver se movendo
                 if (teclas[CIMA] || teclas[BAIXO] || teclas[ESQUERDA] || teclas[DIREITA]) {
                     p1.timer += 1.0 / 60.0;
@@ -325,10 +442,12 @@ int main() {
                 break;
         }
         time++;
-        enemies = spawnEnemies(enemies, &numenemies, time, intervals, &old_num);
-        enemies = initEnemies(enemies, &numenemies, &old_num);
-        enemies = despawnEnemies(enemies, &numenemies);
-        moveEnemies(enemies, &numenemies);
+        projectiles = spawnShells(projectiles, &numshells, &old_numshells, teclas);
+        projectiles = initShells(projectiles, player, &numshells, &old_numshells);
+
+        enemies = spawnEnemies(enemies, &numenemies, time, intervals, &old_numenemies);
+        enemies = initEnemies(enemies, &numenemies, &old_numenemies);
+        enemies = despawnEnemies(enemies, &numenemies, &player, dmg_arr);
 
 
         // 5. Redesenho da Tela
@@ -338,6 +457,9 @@ int main() {
 
             al_draw_text(font, al_map_rgb(255,255,255), WIDTH/2, 20, ALLEGRO_ALIGN_CENTER,
                          "Little tough, huh?");
+
+            al_draw_textf(font, al_map_rgb(255,255,255), 10, 20, 0,
+                          "Vitality: %.2f/100", player.HP);
 
             al_draw_textf(font, al_map_rgb(255,255,0), 10, HEIGHT - 30, 0,
                           "Mouse: (%d,%d) | Coord: (%.0f,%.0f)", mouse_x, mouse_y, p1.x, p1.y);
@@ -352,9 +474,9 @@ int main() {
             int sprite_y = p1.movement * SPRITE_SIZE;
             al_draw_bitmap_region(sprite_sheet, sprite_x, sprite_y, SPRITE_SIZE, SPRITE_SIZE,
                                   p1.x, p1.y, 0);*/
-
+            drawShells(projectiles, &numshells, shell);
             drawEnemies(enemies, &numenemies, asteroid);
-
+            drawPlayer(player, spaceship);
             al_flip_display();
         }
     }
