@@ -57,59 +57,109 @@ typedef struct {
 } projectile;
 
 
-int randomwRange(int min, int max) {
+float randomwRange(int min, int max) {
     if (min > max) { // Swap if range is reversed
         int temp = min;
         min = max;
         max = temp;
     }
-    return rand() % (max - min + 1) + min;
+    return (float)(rand() % (max - min + 1) + min);
 }
 
 
-void spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals){
+enemy* spawnEnemies(enemy* Enemies, int* numenemies, int timer, int* intervals, int* old_num){
     int num = *numenemies;
+    *old_num = *numenemies;
     for(int i = 0; i < 3; i++){
 
         if(timer % intervals[i] == 0){
             num++;
 
-            Enemies  = realloc(Enemies, num*sizeof(enemy));
-            Enemies[num-1].type = i;
+            enemy *temp = realloc(Enemies, num * sizeof(enemy));
 
+            if(temp == NULL)
+            {
+                printf("ALLOCATION FAILURE");
+                return Enemies;
+            }
+            else
+            {
+                Enemies = temp;
+            }
+
+            Enemies[num-1].type = i;
         }
         else continue;
     }
     *numenemies = num;
-    return;
+    return Enemies;
 }
 
 
-void initEnemies(enemy* Enemies, int* numenemies){
+enemy* initEnemies(enemy* Enemies, int* numenemies, int* old_num){
     int num  = *numenemies;
-    for(int i = 0; i < num; i++){
-            if(Enemies[i].vy == 0){
-            Enemies[i].xpos = randomwRange(0, WIDTH);
-            Enemies[i].ypos = HEIGHT - 20;
-            Enemies[i].vx = randomwRange(HEIGHT, HEIGHT)/6;
-            Enemies[i].vy = HEIGHT/4;
+    int i = num-1;//last element
 
-            switch (Enemies[i].type){
-                case 0: Enemies[i].HP = 20;
-                case 1: Enemies[i].HP = 40;
-                case 2: Enemies[i].HP = 70;
-                case 3: Enemies[i].HP = 100;
+        for(int i = *old_num; i < num; i++){//random vars
+
+            Enemies[i].xpos = randomwRange(0, WIDTH);
+            Enemies[i].ypos = 20.0f;
+            Enemies[i].vx = randomwRange(HEIGHT, -HEIGHT)/6.0f;
+            Enemies[i].vy = (float)HEIGHT/4;
+
+            switch (Enemies[i].type){//HP by type
+                case 0:
+                    Enemies[i].HP = 20;
+                    break;
+                case 1:
+                    Enemies[i].HP = 40;
+                    break;
+                case 2:
+                    Enemies[i].HP = 70;
+                    break;
+                case 3:
+                    Enemies[i].HP = 100;
+                    break;
             }
         }
+    return Enemies;
+}
+
+enemy* despawnEnemies(enemy* Enemies, int* numenemies){
+    int write = 0;
+    for(int read = 0; read < *numenemies; read++){
+        //idea: maps a hypothetical array of donotremove[] onto enemies, such that Enemies[i] is the ith valid enemy
+        bool remove = false;
+
+        if(Enemies[read].HP <= 0) remove = true;
+        if(Enemies[read].ypos > 480) remove = true;
+        if(remove) printf("removed! numenemies = %d", *numenemies);
+        if(!remove){
+            Enemies[write] = Enemies[read];
+            write++;
+        }
     }
-    return;
+    *numenemies = write;
+
+    if(write == 0)
+    {
+        free(Enemies);
+        return NULL;
+    }
+    //truncates the "fat" out
+    enemy *tmp = realloc(Enemies, write * sizeof(enemy));
+    if(tmp)
+        Enemies = tmp;
+
+    return Enemies;
 }
 
 int moveEnemies(enemy* Enemies, int* numenemies){
     int num  = *numenemies;
     for(int i = 0; i < num; i++){
-        Enemies[i].xpos += Enemies[i].vx;
-        Enemies[i].ypos += Enemies[i].vy;
+        Enemies[i].xpos += Enemies[i].vx/60;
+        Enemies[i].ypos += Enemies[i].vy/60;
+        printf("%f\n", Enemies[i].ypos);
     }
     return 0;
 }
@@ -117,7 +167,7 @@ int moveEnemies(enemy* Enemies, int* numenemies){
 void drawEnemies(enemy* Enemies, int* numenemies, ALLEGRO_BITMAP* asteroid){
     int num  = *numenemies;
     for(int i = 0; i < num; i++){
-        al_draw_bitmap(asteroid, Enemies[i].xpos/WIDTH, Enemies[i].ypos/HEIGHT, 0);
+        al_draw_bitmap(asteroid, Enemies[i].xpos, Enemies[i].ypos, 0);
     }
     return;
 }
@@ -188,15 +238,16 @@ int main() {
 
 
 
-    int intervals[] = {1000, 12000, 13000};
+    int intervals[] = {10, 12, 13};
     int numenemies = 0;
     int time = 0;
 
     enemy* enemies = NULL;
     enemies = malloc(sizeof(enemy));
+    int old_num = 0;
 
-    spawnEnemies(enemies, &numenemies, 0, intervals);
-    initEnemies(enemies, &numenemies);
+    enemies = spawnEnemies(enemies, &numenemies, 0, intervals, &old_num);
+    enemies = initEnemies(enemies, &numenemies, &old_num);
 
 
     // 4. Loop Principal
@@ -274,33 +325,33 @@ int main() {
                 break;
         }
         time++;
-        spawnEnemies(enemies, &numenemies, time, intervals);
-        initEnemies(enemies, &numenemies);
-
+        enemies = spawnEnemies(enemies, &numenemies, time, intervals, &old_num);
+        enemies = initEnemies(enemies, &numenemies, &old_num);
+        enemies = despawnEnemies(enemies, &numenemies);
         moveEnemies(enemies, &numenemies);
 
 
         // 5. Redesenho da Tela
         if (redraw && al_is_event_queue_empty(queue)) {
             redraw = false;
-            al_clear_to_color(al_map_rgb(30, 30, 30));
+            al_clear_to_color(al_map_rgb(0, 0, 0));
 
             al_draw_text(font, al_map_rgb(255,255,255), WIDTH/2, 20, ALLEGRO_ALIGN_CENTER,
-                         "Clique no botão para tocar/parar o som");
+                         "Little tough, huh?");
 
             al_draw_textf(font, al_map_rgb(255,255,0), 10, HEIGHT - 30, 0,
                           "Mouse: (%d,%d) | Coord: (%.0f,%.0f)", mouse_x, mouse_y, p1.x, p1.y);
 
             // Botão interativo
-            ALLEGRO_COLOR cor_botao = hover ? al_map_rgb(0,180,255) : al_map_rgb(0,120,255);
+            /*ALLEGRO_COLOR cor_botao = hover ? al_map_rgb(0,180,255) : al_map_rgb(0,120,255);
             al_draw_filled_rounded_rectangle(220,190,420,250,10,10,cor_botao);
-            al_draw_text(font, al_map_rgb(255,255,255), 320, 205, ALLEGRO_ALIGN_CENTER, "Tocar Som");
+            al_draw_text(font, al_map_rgb(255,255,255), 320, 205, ALLEGRO_ALIGN_CENTER, "Tocar Som");*/
 
             // Desenha o personagem na posição (p1.x, p1.y) calculada pela física
-            int sprite_x = p1.frame * SPRITE_SIZE;
+            /*int sprite_x = p1.frame * SPRITE_SIZE;
             int sprite_y = p1.movement * SPRITE_SIZE;
             al_draw_bitmap_region(sprite_sheet, sprite_x, sprite_y, SPRITE_SIZE, SPRITE_SIZE,
-                                  p1.x, p1.y, 0);
+                                  p1.x, p1.y, 0);*/
 
             drawEnemies(enemies, &numenemies, asteroid);
 
