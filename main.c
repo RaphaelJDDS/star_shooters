@@ -131,21 +131,22 @@ Enemy* initEnemies(Enemy* enemies, int* numenemies, int* old_num){
     return enemies;
 }
 
-Enemy* despawnEnemies(Enemy* enemies, int* numenemies, Player* player_ptr, int* dmg_arr){
+Enemy* despawnEnemies(Enemy* enemies, int* numenemies, Player* player_ptr, int* dmg_arr, int collided_idx){
     int write = 0;
     Player player = *player_ptr;
     for(int read = 0; read < *numenemies; read++){
         //idea: maps a hypothetical array of donotremove[] onto enemies, such that enemies[i] is the ith valid Enemy
-        bool remove = false;
+        bool remove = collided_idx == read;
         bool touched_ground = false;
 
-        if(enemies[read].HP <= 0) remove = true;
+        remove = remove || enemies[read].HP <= 0;
+
         if(enemies[read].ypos > 480){
             remove = true;
             touched_ground = true;
         }
         if(remove){
-            printf("removed! numenemies = %d", *numenemies);
+            //printf("removed! numenemies = %d", *numenemies);
         }
 
         if(touched_ground){//"intron functionality"
@@ -220,10 +221,10 @@ void movePlayer(Player* player_ptr, bool* keys){
     return;
 }
 
-Projectile* spawnShells(Projectile* projectiles, int* numshells, int* old_num, bool* keys){
+Projectile* spawnShells(Projectile* projectiles, int* time_ptr, int reload, int* numshells, int* old_num, bool* keys){
     int num = *numshells;
     *old_num = *numshells;
-    if(keys[0]){
+    if(keys[0] && (*time_ptr >= reload)){
         num++;
 
         Projectile *temp = realloc(projectiles, num * sizeof(Projectile));
@@ -235,10 +236,10 @@ Projectile* spawnShells(Projectile* projectiles, int* numshells, int* old_num, b
         else{
             projectiles = temp;
         }
+        *time_ptr = 0;
     }
 
     *numshells = num;
-    printf("\nlebendig!\n");
     return projectiles;
 }
 
@@ -253,6 +254,42 @@ Projectile* initShells(Projectile* projectiles, Player player, int* numshells, i
             projectiles[i].vy = -(float)HEIGHT/2;
         }
     return projectiles;
+}
+
+Projectile* despawnShells(Projectile* projectiles, int* numshells, int collided_idx){
+    int write = 0;
+    for(int read = 0; read < *numshells; read++){
+        //idea: maps a hypothetical array of donotremove[] onto enemies, such that enemies[i] is the ith valid Projectile
+        bool  right = projectiles[read].xpos > WIDTH;
+        bool  left = projectiles[read].xpos < 0;
+        bool  top = projectiles[read].ypos < 0;
+        bool  bottom = projectiles[read].ypos > HEIGHT;
+
+        bool remove = right || left || top || bottom || collided_idx == read;
+
+
+        if(remove){
+            printf("removed! numshells = %d", *numshells);
+        }
+        else{
+            projectiles[write] = projectiles[read];
+            write++;
+        }
+    }
+    *numshells = write;
+
+    if(write == 0){
+        //free(projectiles);
+        return NULL;
+    }
+    
+    //truncates the "fat" out
+
+    else{
+        Projectile *tmp = realloc(projectiles, write * sizeof(Projectile));
+        if(tmp) projectiles = tmp;
+        return projectiles;
+    }
 }
 
 int moveShells(Projectile* projectiles, int* numshells){
@@ -270,6 +307,30 @@ void drawShells(Projectile* projectiles, int* numshells, ALLEGRO_BITMAP* shell){
         al_draw_bitmap(shell, projectiles[i].xpos, projectiles[i].ypos, 0);
     }
     return;
+}
+
+void collision(Enemy* enemies, int* numenemies, Player* player_ptr, int* dmg_arr,
+    Projectile* projectiles, int* numshells){
+        bool collision;
+        float distx;
+        float disty;
+        for(int i = 0; i < *numshells; i++){
+            for(int j = 0; j < *numenemies; j++){
+                distx  = projectiles[i].xpos - enemies[j].xpos;
+                disty  = projectiles[i].ypos - enemies[j].ypos;
+
+                distx = distx*distx;
+                disty = disty*disty;
+
+                collision = distx + disty < 625;
+
+                if(collision){
+                    projectiles = despawnShells(projectiles, numshells, i);
+                    enemies = despawnEnemies(enemies, numenemies, player_ptr, dmg_arr, j);
+                }
+            }
+        }
+        return;
 }
 
 int main() {
@@ -345,11 +406,12 @@ int main() {
 
 
 
-    int intervals[] = {10, 12, 13};
+    int intervals[] = {100, 120, 130};
     int numenemies = 0;
     int numshells = 0;
     int old_numshells;
     int time = 0;
+    int reload = 8;
 
     Enemy* enemies = NULL;
     enemies = malloc(sizeof(Enemy));
@@ -427,6 +489,16 @@ int main() {
                 movePlayer(&player, teclas);
                 moveEnemies(enemies, &numenemies);
                 moveShells(projectiles, &numshells);
+
+                projectiles = spawnShells(projectiles, &time, reload, &numshells, &old_numshells, teclas);
+                projectiles = initShells(projectiles, player, &numshells, &old_numshells);
+                projectiles = despawnShells(projectiles, &numshells, -1);
+
+                enemies = spawnEnemies(enemies, &numenemies, time, intervals, &old_numenemies);
+                enemies = initEnemies(enemies, &numenemies, &old_numenemies);
+                enemies = despawnEnemies(enemies, &numenemies, &player, dmg_arr, -1);
+
+                collision(enemies, &numenemies, &player, dmg_arr, projectiles, &numshells);
                 // Lógica de Animação: Só avança os frames se o personagem estiver se movendo
                 if (teclas[CIMA] || teclas[BAIXO] || teclas[ESQUERDA] || teclas[DIREITA]) {
                     p1.timer += 1.0 / 60.0;
@@ -442,12 +514,8 @@ int main() {
                 break;
         }
         time++;
-        projectiles = spawnShells(projectiles, &numshells, &old_numshells, teclas);
-        projectiles = initShells(projectiles, player, &numshells, &old_numshells);
 
-        enemies = spawnEnemies(enemies, &numenemies, time, intervals, &old_numenemies);
-        enemies = initEnemies(enemies, &numenemies, &old_numenemies);
-        enemies = despawnEnemies(enemies, &numenemies, &player, dmg_arr);
+
 
 
         // 5. Redesenho da Tela
