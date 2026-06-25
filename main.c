@@ -31,6 +31,11 @@ Ele introduz conceitos fundamentais de desenvolvimento de jogos:
 // Enumeração para facilitar a leitura do vetor de teclas
 enum DIRECOES { CIMA, BAIXO, ESQUERDA, DIREITA };
 
+typedef enum {
+    GAME_RUNNING,
+    GAME_OVER
+} GameState;
+
 // Estrutura que agrupa todos os dados do nosso personagem
 typedef struct {
     float x;              // Posição no eixo X
@@ -282,7 +287,7 @@ Projectile* despawnShells(Projectile* projectiles, int* numshells, int collided_
         //free(projectiles);
         return NULL;
     }
-    
+
     //truncates the "fat" out
 
     else{
@@ -309,28 +314,162 @@ void drawShells(Projectile* projectiles, int* numshells, ALLEGRO_BITMAP* shell){
     return;
 }
 
-void collision(Enemy* enemies, int* numenemies, Player* player_ptr, int* dmg_arr,
-    Projectile* projectiles, int* numshells){
-        bool collision;
-        float distx;
-        float disty;
-        for(int i = 0; i < *numshells; i++){
-            for(int j = 0; j < *numenemies; j++){
-                distx  = projectiles[i].xpos - enemies[j].xpos;
-                disty  = projectiles[i].ypos - enemies[j].ypos;
+void collision(
+    Enemy **enemies, int *numenemies, Player *player_ptr, int *dmg_arr, Projectile **projectiles, int *numshells)
+{
+    bool remove_proj[*numshells];
+    bool remove_enemy[*numenemies];
 
-                distx = distx*distx;
-                disty = disty*disty;
+    for (int i = 0; i < *numshells; i++)
+        remove_proj[i] = false;
 
-                collision = distx + disty < 625;
+    for (int j = 0; j < *numenemies; j++)
+        remove_enemy[j] = false;
 
-                if(collision){
-                    projectiles = despawnShells(projectiles, numshells, i);
-                    enemies = despawnEnemies(enemies, numenemies, player_ptr, dmg_arr, j);
-                }
+    for (int i = *numshells - 1; i >= 0; i--) {
+        for (int j = *numenemies - 1; j >= 0; j--) {
+
+            float distx = (*projectiles)[i].xpos - (*enemies)[j].xpos;
+            float disty = (*projectiles)[i].ypos - (*enemies)[j].ypos;
+
+            if (distx * distx + disty * disty < 900.0f) {
+                remove_proj[i] = true;
+                remove_enemy[j] = true;
+                break;      // projectile disappears after first hit
             }
         }
+    }
+
+    /* remove projectiles from highest index down */
+    for (int i = *numshells - 1; i >= 0; i--) {
+        if (remove_proj[i]) {
+            *projectiles = despawnShells(*projectiles, numshells, i);
+        }
+    }
+
+    /* remove enemies from highest index down */
+    for (int j = *numenemies - 1; j >= 0; j--) {
+        if (remove_enemy[j]) {
+            *enemies = despawnEnemies(*enemies, numenemies, player_ptr,dmg_arr, j);
+        }
+    }
+}
+
+void drawGameOverScreen(ALLEGRO_FONT *font, bool restart_selected){
+    al_clear_to_color(al_map_rgb(0, 0, 0));
+
+    al_draw_text(
+        font,
+        al_map_rgb(255, 0, 0),
+        WIDTH / 2,
+        HEIGHT / 3,
+        ALLEGRO_ALIGN_CENTER,
+        "GAME OVER"
+    );
+
+    ALLEGRO_COLOR restart_color =
+        restart_selected ? al_map_rgb(255,255,0)
+                         : al_map_rgb(255,255,255);
+
+    ALLEGRO_COLOR quit_color =
+        !restart_selected ? al_map_rgb(255,255,0)
+                          : al_map_rgb(255,255,255);
+
+    al_draw_text(
+        font,
+        restart_color,
+        WIDTH / 2,
+        HEIGHT / 2,
+        ALLEGRO_ALIGN_CENTER,
+        "Restart"
+    );
+
+    al_draw_text(
+        font,
+        quit_color,
+        WIDTH / 2,
+        HEIGHT / 2 + 40,
+        ALLEGRO_ALIGN_CENTER,
+        "Quit"
+    );
+
+    al_flip_display();
+}
+
+void resetGame(
+    Player *player,
+    Enemy **enemies,
+    int *numenemies,
+    Projectile **projectiles,
+    int *numshells,
+    int *time
+)
+{
+    free(*enemies);
+    free(*projectiles);
+
+    *enemies = NULL;
+    *projectiles = NULL;
+
+    *numenemies = 0;
+    *numshells = 0;
+    *time = 0;
+
+    *player = initPlayer();
+}
+
+void saveGame(const char *filename, Player *player, Enemy *enemies, int numenemies){
+    FILE *save_file = fopen(filename, "wb");
+
+    if (!save_file){
+        printf("\033[31;40mFailed to save game.\n\033[0m");
         return;
+    }
+
+    //Writes player & enemy data (including how many of them there are) into the file
+    fwrite(player, sizeof(Player), 1, save_file);
+
+    fwrite(&numenemies, sizeof(int), 1, save_file);
+
+    if (numenemies > 0){
+        fwrite(enemies, sizeof(Enemy), numenemies, save_file);
+    }
+    fclose(save_file);
+    printf("Jogo salvo.\n");
+}
+
+void loadGame(const char *filename, Player *player, Enemy **enemies, int *numenemies){
+    FILE *save_file = fopen(filename, "rb");
+
+    if (!save_file){
+        printf("\033[31;40mArquivo nao encontrado.\n\033[0m");
+        return;
+    }
+
+    //Pulls player & enemy data (incl. their count) from the file
+    fread(player, sizeof(Player), 1, save_file);
+
+    fread(numenemies, sizeof(int), 1, save_file);
+
+    free(*enemies);
+
+    if (*numenemies > 0){
+        *enemies = malloc((*numenemies) * sizeof(Enemy));
+
+        if (*enemies == NULL){
+            printf("Allocation failure while loading.\n");
+            fclose(save_file);
+            return;
+        }
+
+        fread(*enemies, sizeof(Enemy), *numenemies, save_file);
+    }
+    else{
+        *enemies = NULL;
+    }
+
+    fclose(save_file);
+    printf("\033[31;40mGame loaded.\n\033[0m");
 }
 
 int main() {
@@ -404,13 +543,16 @@ int main() {
 
     al_start_timer(timer);
 
-
-
+    bool restart_selected = true;
+    GameState gameState = GAME_RUNNING;
     int intervals[] = {100, 120, 130};
     int numenemies = 0;
     int numshells = 0;
     int old_numshells;
+
     int time = 0;
+    int shooting_cooldown = 0;
+
     int reload = 8;
 
     Enemy* enemies = NULL;
@@ -429,6 +571,35 @@ int main() {
     // 4. Loop Principal
     while (running) {
         al_wait_for_event(queue, &ev);
+        if(gameState == GAME_OVER){
+            switch(ev.type){
+                case ALLEGRO_EVENT_KEY_DOWN:
+                    if(ev.keyboard.keycode == ALLEGRO_KEY_UP ||
+                       ev.keyboard.keycode == ALLEGRO_KEY_DOWN){
+                        restart_selected = !restart_selected;
+                    }
+
+                    if(ev.keyboard.keycode == ALLEGRO_KEY_ENTER){
+                        if(restart_selected){
+                            resetGame(
+                                &player,
+                                &enemies,
+                                &numenemies,
+                                &projectiles,
+                                &numshells,
+                                &time
+                            );
+
+                            gameState = GAME_RUNNING;
+                        }
+                        else{
+                            running = false;
+                        }
+                    }
+                    break;
+            }
+            redraw = true;
+        }
 
         switch (ev.type) {
             case ALLEGRO_EVENT_DISPLAY_CLOSE:
@@ -442,26 +613,25 @@ int main() {
                 hover = (mouse_x >= 220 && mouse_x <= 420 && mouse_y >= 190 && mouse_y <= 250);
                 break;
 
-            case ALLEGRO_EVENT_MOUSE_BUTTON_DOWN:
-                if (hover) {
-                    if (!playing) {
-                        al_set_sample_instance_playmode(sample_instance, ALLEGRO_PLAYMODE_LOOP);
-                        al_play_sample_instance(sample_instance);
-                        playing = true;
-                    } else {
-                        al_stop_sample_instance(sample_instance);
-                        playing = false;
-                    }
-                }
-                break;
-
             // QUANDO A TECLA É PRESSIONADA: Apenas marcamos como verdadeira
             case ALLEGRO_EVENT_KEY_DOWN:
+
                 if (ev.keyboard.keycode == ALLEGRO_KEY_ESCAPE) running = false;
                 else if (ev.keyboard.keycode == ALLEGRO_KEY_UP) teclas[CIMA] = true;
                 else if (ev.keyboard.keycode == ALLEGRO_KEY_DOWN) teclas[BAIXO] = true;
                 else if (ev.keyboard.keycode == ALLEGRO_KEY_LEFT) teclas[ESQUERDA] = true;
                 else if (ev.keyboard.keycode == ALLEGRO_KEY_RIGHT) teclas[DIREITA] = true;
+                if(ev.keyboard.keycode == ALLEGRO_KEY_F5){
+                    saveGame(
+                        "D:/Users/rjdds/Downloads/trabalho_ipe//trabalho_ipe/saves/save.dat",
+                        &player,
+                        enemies,
+                        numenemies
+                    );
+                }
+                if(ev.keyboard.keycode == ALLEGRO_KEY_F9){
+                    loadGame("D:/Users/rjdds/Downloads/trabalho_ipe/trabalho_ipe/saves/save.dat", &player, &enemies, &numenemies);
+                }
                 break;
 
             // QUANDO A TECLA É SOLTA: Marcamos como falsa
@@ -490,7 +660,7 @@ int main() {
                 moveEnemies(enemies, &numenemies);
                 moveShells(projectiles, &numshells);
 
-                projectiles = spawnShells(projectiles, &time, reload, &numshells, &old_numshells, teclas);
+                projectiles = spawnShells(projectiles, &shooting_cooldown, reload, &numshells, &old_numshells, teclas);
                 projectiles = initShells(projectiles, player, &numshells, &old_numshells);
                 projectiles = despawnShells(projectiles, &numshells, -1);
 
@@ -498,7 +668,10 @@ int main() {
                 enemies = initEnemies(enemies, &numenemies, &old_numenemies);
                 enemies = despawnEnemies(enemies, &numenemies, &player, dmg_arr, -1);
 
-                collision(enemies, &numenemies, &player, dmg_arr, projectiles, &numshells);
+                collision(&enemies, &numenemies, &player, dmg_arr, &projectiles, &numshells);
+                if(player.HP <= 0){
+                    gameState = GAME_OVER;
+                }
                 // Lógica de Animação: Só avança os frames se o personagem estiver se movendo
                 if (teclas[CIMA] || teclas[BAIXO] || teclas[ESQUERDA] || teclas[DIREITA]) {
                     p1.timer += 1.0 / 60.0;
@@ -506,7 +679,7 @@ int main() {
                         p1.frame = (p1.frame + 1) % SPRITE_COLS;
                         p1.timer = 0.0;
                     }
-                } else {
+                } else{
                     p1.frame = 0; // Retorna à pose de repouso se estiver parado
                 }
 
@@ -514,6 +687,7 @@ int main() {
                 break;
         }
         time++;
+        shooting_cooldown++;
 
 
 
@@ -521,6 +695,10 @@ int main() {
         // 5. Redesenho da Tela
         if (redraw && al_is_event_queue_empty(queue)) {
             redraw = false;
+            if(gameState == GAME_OVER){
+                drawGameOverScreen(font, restart_selected);
+                continue;
+            }
             al_clear_to_color(al_map_rgb(0, 0, 0));
 
             al_draw_text(font, al_map_rgb(255,255,255), WIDTH/2, 20, ALLEGRO_ALIGN_CENTER,
@@ -532,16 +710,6 @@ int main() {
             al_draw_textf(font, al_map_rgb(255,255,0), 10, HEIGHT - 30, 0,
                           "Mouse: (%d,%d) | Coord: (%.0f,%.0f)", mouse_x, mouse_y, p1.x, p1.y);
 
-            // Botão interativo
-            /*ALLEGRO_COLOR cor_botao = hover ? al_map_rgb(0,180,255) : al_map_rgb(0,120,255);
-            al_draw_filled_rounded_rectangle(220,190,420,250,10,10,cor_botao);
-            al_draw_text(font, al_map_rgb(255,255,255), 320, 205, ALLEGRO_ALIGN_CENTER, "Tocar Som");*/
-
-            // Desenha o personagem na posição (p1.x, p1.y) calculada pela física
-            /*int sprite_x = p1.frame * SPRITE_SIZE;
-            int sprite_y = p1.movement * SPRITE_SIZE;
-            al_draw_bitmap_region(sprite_sheet, sprite_x, sprite_y, SPRITE_SIZE, SPRITE_SIZE,
-                                  p1.x, p1.y, 0);*/
             drawShells(projectiles, &numshells, shell);
             drawEnemies(enemies, &numenemies, asteroid);
             drawPlayer(player, spaceship);
