@@ -37,7 +37,7 @@ Projectile* initShells(Projectile* projectiles, Player player, int* numshells, i
 Projectile* despawnShells(Projectile* projectiles, int* numshells, int collided_idx) {
     int write = 0;
     for (int read = 0; read < *numshells; read++) {
-        //idea: maps a hypothetical array of donotremove[] onto enemies, such that enemies[i] is the ith valid Projectile
+        //idea: maps a hypothetical array of donotremove[] onto shells, such that shells[i] is the ith valid Projectile (same as enemies)
         bool  right = projectiles[read].xpos > WIDTH;
         bool  left = projectiles[read].xpos < 0;
         bool  top = projectiles[read].ypos < 0;
@@ -46,7 +46,7 @@ Projectile* despawnShells(Projectile* projectiles, int* numshells, int collided_
         bool remove = right || left || top || bottom || collided_idx == read;
 
         if (remove) {
-            printf("removed! numshells = %d", *numshells);
+            //printf("removed! numshells = %d", *numshells);
         }
         else {
             projectiles[write] = projectiles[read];
@@ -75,12 +75,4 @@ int moveShells(Projectile* projectiles, int* numshells) {
         printf("%f\n", projectiles[i].ypos);
     }
     return 0;
-}
-
-void drawShells(Projectile* projectiles, int* numshells, ALLEGRO_BITMAP* shell) {
-    int num = *numshells;
-    for (int i = 0; i < num; i++) {
-        al_draw_bitmap(shell, projectiles[i].xpos, projectiles[i].ypos, 0);
-    }
-    return;
 }

@@ -14,15 +14,16 @@ Enemy* spawnEnemies(Enemy* enemies, int* numenemies, int timer, int* intervals, 
     *old_num = *numenemies;
     for (int i = 0; i < 3; i++) {
 
-        if (timer % intervals[i] == 0) {
+        if ((timer) % intervals[i] == 0 && timer != 0) {
             num++;
 
-            Enemy *temp = realloc(enemies, num * sizeof(Enemy));
+            Enemy *temp = realloc(enemies, num * sizeof(Enemy));//reallocates mem
 
             if (temp == NULL) {
                 printf("ALLOCATION FAILURE");
                 return enemies;
-            } else {
+            }
+            else{
                 enemies = temp;
             }
 
@@ -114,24 +115,4 @@ int moveEnemies(Enemy* enemies, int* numenemies) {
         if (enemies[i].xpos > WIDTH) enemies[i].xpos -= WIDTH;
     }
     return 0;
-}
-
-void drawEnemies(Enemy* enemies, int* numenemies, ALLEGRO_BITMAP* asteroid) {
-    int num = *numenemies;
-    int asteroid_width = al_get_bitmap_width(asteroid);
-    int asteroid_height = al_get_bitmap_height(asteroid);
-    for (int i = 0; i < num; i++) {
-        float scale = enemies[i].type == 2 ? 1.5f : 1.0f;
-        float draw_x = enemies[i].xpos + (asteroid_width - asteroid_width * scale) / 2.0f;
-        float draw_y = enemies[i].ypos + (asteroid_height - asteroid_height * scale) / 2.0f;
-        al_draw_scaled_bitmap(asteroid,
-                              0, 0,
-                              asteroid_width, asteroid_height,
-                              draw_x,
-                              draw_y,
-                              asteroid_width * scale,
-                              asteroid_height * scale,
-                              0);
-    }
-    return;
 }

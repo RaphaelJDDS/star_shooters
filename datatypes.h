@@ -18,20 +18,11 @@ enum DIRECOES { CIMA, BAIXO, ESQUERDA, DIREITA, SHIFT };
 
 typedef enum {
     GAME_RUNNING,
+    GAME_PAUSED,
     GAME_OVER,
     GAME_VICTORY
 } GameState;
 
-// Estrutura que agrupa todos os dados do nosso personagem
-typedef struct {
-    float x;              // Posição no eixo X
-    float y;              // Posição no eixo Y
-    float velocidade;     // Velocidade de deslocamento (pixels por frame)
-    int frame;            // Coluna atual do sprite (animação)
-    int movement;         // Linha atual do sprite (direção que está olhando)
-    double timer;         // Acumulador de tempo para a animação
-    double delay;         // Tempo necessário para trocar de frame
-} Personagem;
 
 typedef struct {
     float xpos, ypos;
@@ -39,8 +30,8 @@ typedef struct {
 
     int HP;
 
-    int type; //from 0 to 3 (used to compute damage dealt to the player/HP)
-    int dmg[4];
+    int type; //from 0 to 2 (used to compute damage dealt to the player/HP)
+    int dmg[3];
 } Enemy;
 
 typedef struct {

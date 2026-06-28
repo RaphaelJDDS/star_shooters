@@ -10,11 +10,6 @@ Player initPlayer() {
     return player;
 }
 
-void drawPlayer(Player player, ALLEGRO_BITMAP* spaceship) {
-    al_draw_bitmap(spaceship, player.xpos, player.ypos, 0);
-    return;
-}
-
 void movePlayer(Player* player_ptr, bool* keys) {
     int coeff = keys[DIREITA] - keys[ESQUERDA]; //masking for convenience. +1 for right, -1 for left, 0 for both
     float speed_multiplier = keys[SHIFT] ? 1.4f : 1.0f;

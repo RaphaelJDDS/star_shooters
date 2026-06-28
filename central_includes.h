@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <time.h>
 #include <string.h>
 
@@ -13,6 +14,5 @@
 #include "player.h"
 #include "projectiles.h"
 #include "game_loop.h"
-
 
 #endif // CENTRAL_INCLUDES_H

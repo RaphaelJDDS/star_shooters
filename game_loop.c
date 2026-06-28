@@ -1,46 +1,5 @@
 #include "central_includes.h"
 
-void drawGameOverScreen(ALLEGRO_FONT *font, bool restart_selected) {
-    al_clear_to_color(al_map_rgb(0, 0, 0));
-
-    al_draw_text(
-        font,
-        al_map_rgb(255, 0, 0),
-        WIDTH / 2,
-        HEIGHT / 3,
-        ALLEGRO_ALIGN_CENTER,
-        "GAME OVER"
-    );
-
-    ALLEGRO_COLOR restart_color =
-        restart_selected ? al_map_rgb(255,255,0)
-                         : al_map_rgb(255,255,255);
-
-    ALLEGRO_COLOR quit_color =
-        !restart_selected ? al_map_rgb(255,255,0)
-                          : al_map_rgb(255,255,255);
-
-    al_draw_text(
-        font,
-        restart_color,
-        WIDTH / 2,
-        HEIGHT / 2,
-        ALLEGRO_ALIGN_CENTER,
-        "Restart"
-    );
-
-    al_draw_text(
-        font,
-        quit_color,
-        WIDTH / 2,
-        HEIGHT / 2 + 40,
-        ALLEGRO_ALIGN_CENTER,
-        "Quit"
-    );
-
-    al_flip_display();
-}
-
 void resetGame(Player *player, Enemy **enemies, int *numenemies, Projectile **projectiles, int *numshells, int *time) {
     free(*enemies);
     free(*projectiles);
@@ -56,13 +15,25 @@ void resetGame(Player *player, Enemy **enemies, int *numenemies, Projectile **pr
 }
 
 void saveGame(const char *filename, Player *player, Enemy *enemies, int numenemies) {
-    char folder[30];
-    strcpy(folder, "../saves/");
-    strcat(folder, filename);
-    FILE *save_file = fopen(filename, "wb");
+    const char *save_dirs[] = {
+        "saves",
+        "../saves",
+        "../../saves",
+        "../../../saves",
+        "../../../../saves"
+    };//All plausible structures for the saves folder. Maybe OP, but it's flexible.
+
+    char path[256];
+    FILE *save_file = NULL;
+
+    for (int i = 0; i < sizeof(save_dirs) / sizeof(save_dirs[0]); i++) {
+        snprintf(path, sizeof(path), "%s/%s", save_dirs[i], filename);
+        save_file = fopen(path, "wb");
+        if (save_file) break;
+    }
 
     if (!save_file) {
-        printf("\033[31;40mFalha ao salvar jogo.\n\033[0m");
+        printf("\033[31;40mFalha ao salvar jogo: %s\n\033[0m", path);
         return;
     }
 
@@ -78,78 +49,113 @@ void saveGame(const char *filename, Player *player, Enemy *enemies, int numenemi
     printf("Jogo salvo como '%s'.\n", filename);
 }
 
-void loadGame(char *filename, Player *player, Enemy **enemies, int *numenemies) {
-    char folder[30];
-    strcpy(folder, "../saves/");
-    strcat(folder, filename);
-    strcpy(filename, folder);
-    FILE *save_file = fopen(filename, "rb");
+static void sanitizeLoadedEnemies(Enemy *enemies, int numenemies, int* hp_by_type) {//An attempt at loading files correctly.
+    const float safe_bottom = HEIGHT - 80.0f;
+    const float max_speed = HEIGHT / 2.0f;
 
-    if (!save_file) {
-        printf("\033[31;40mArquivo nao encontrado.\n\033[0m");
-        return;
-    }
+    for (int i = 0; i < numenemies; i++) {
+        if (enemies[i].xpos < 0.0f) enemies[i].xpos = 0.0f;
+        else if (enemies[i].xpos > WIDTH) enemies[i].xpos = WIDTH;
 
-    //Pulls player & enemy data (incl. their count) from the file
-    fread(player, sizeof(Player), 1, save_file);
+        if (enemies[i].ypos < 0.0f) enemies[i].ypos = 20.0f;
+        else if (enemies[i].ypos > safe_bottom) enemies[i].ypos = safe_bottom;
 
-    fread(numenemies, sizeof(int), 1, save_file);
-
-    free(*enemies);
-
-    if (*numenemies > 0) {
-        *enemies = malloc((*numenemies) * sizeof(Enemy));
-
-        if (*enemies == NULL) {
-            printf("Allocation failure while loading.\n");
-            fclose(save_file);
-            return;
+        if (enemies[i].type < 0 || enemies[i].type >= ENEMY_TYPES) {
+            enemies[i].type = 0;
         }
 
-        fread(*enemies, sizeof(Enemy), *numenemies, save_file);
+        if (enemies[i].HP <= 0) {
+            enemies[i].HP = hp_by_type[enemies[i].type];
+        }
+
+        if (enemies[i].vx < -max_speed) enemies[i].vx = -max_speed;
+        else if (enemies[i].vx > max_speed) enemies[i].vx = max_speed;
+
+        if (enemies[i].vy < -max_speed) enemies[i].vy = -max_speed;
+        else if (enemies[i].vy > max_speed) enemies[i].vy = max_speed;
     }
-    else {
-        *enemies = NULL;
+}
+
+bool loadGame(char *filename, Player *player, Enemy **enemies, int *numenemies, int* hp_by_type) {
+    const char *save_dirs[] = {
+        "saves",
+        "../saves",
+        "../../saves",
+        "../../../saves",
+        "../../../../saves"
+    };
+
+    char path[256];
+    FILE *save_file = NULL;
+
+    for (int i = 0; i < sizeof(save_dirs) / sizeof(save_dirs[0]); i++) {
+        snprintf(path, sizeof(path), "%s/%s", save_dirs[i], filename);
+        save_file = fopen(path, "rb");
+        if (save_file) break;
+    }
+
+    if (!save_file) {
+        printf("\033[31;40mArquivo nao encontrado: %s\n\033[0m", path);
+        return false;
+    }
+
+    Player temp_player;
+    int temp_numenemies;
+
+    if (fread(&temp_player, sizeof(Player), 1, save_file) != 1 ||
+        fread(&temp_numenemies, sizeof(int), 1, save_file) != 1) {
+        printf("\033[31;40mFalha ao carregar jogo: arquivo corrompido ou inválido.\n\033[0m");
+        fclose(save_file);
+        return false;
+    }
+
+    if (temp_player.HP <= 0.0f || temp_player.HP > 100.0f ||
+        temp_player.xpos < -100.0f || temp_player.xpos > WIDTH + 100.0f ||
+        temp_player.ypos < -100.0f || temp_player.ypos > HEIGHT + 100.0f) {
+        printf("\033[31;40mFalha ao carregar jogo: dados do jogador inválidos.\n\033[0m");
+        fclose(save_file);
+        return false;
+    }
+
+    if (temp_player.HP <= 0.0f) {
+        temp_player.HP = 100.0f;
+    }
+
+
+    if (temp_numenemies < 0 || temp_numenemies > 1000) {
+        printf("\033[31;40mFalha ao carregar jogo: número de inimigos inválido.\n\033[0m");
+        fclose(save_file);
+        return false;
+    }
+
+    Enemy *temp_enemies = NULL;
+    if (temp_numenemies > 0) {
+        temp_enemies = malloc(temp_numenemies * sizeof(Enemy));
+        if (temp_enemies == NULL) {
+            printf("Falha de alocacao carregando.\n");
+            fclose(save_file);
+            return false;
+        }
+
+        if (fread(temp_enemies, sizeof(Enemy), temp_numenemies, save_file) != (size_t)temp_numenemies) {
+            printf("\033[31;40mFalha ao carregar jogo: arquivo corrompido ou inválido.\n\033[0m");
+            free(temp_enemies);
+            fclose(save_file);
+            return false;
+        }
+
+        sanitizeLoadedEnemies(temp_enemies, temp_numenemies, hp_by_type);
     }
 
     fclose(save_file);
+
+    free(*enemies);
+    *enemies = temp_enemies;
+    *player = temp_player;
+    *numenemies = temp_numenemies;
+
     printf("\033[31;40mJogo carregado.\n\033[0m");
-}
-
-void drawVictoryScreen(ALLEGRO_FONT *font, bool restart_selected, float credits_y_position) {
-    const char *credit_lines[] = {
-        "CONGRATULATIONS! YOU WIN",
-        "",
-        "",
-        "Desenvolvimento: Raphael Jones e Lorenco Gobetti",
-        "Participação: Rafael Zanini",
-        "Arte: Lorenco Gobetti",
-        "Arquitetura: Raphael Jones",
-    };
-    const int credit_line_count = sizeof(credit_lines) / sizeof(credit_lines[0]);
-
-    al_clear_to_color(al_map_rgb(0, 0, 0));
-    al_draw_text(font, al_map_rgb(255, 255, 255), WIDTH / 2, 60, ALLEGRO_ALIGN_CENTER, "VICTORY");
-
-    for (int i = 0; i < credit_line_count; i++) {//moves the credits up the screen
-        al_draw_text(font,
-                     al_map_rgb(200, 200, 255),
-                     WIDTH / 2,
-                     credits_y_position + i * 32,
-                     ALLEGRO_ALIGN_CENTER,
-                     credit_lines[i]);
-    }
-
-    ALLEGRO_COLOR restart_color =
-        restart_selected ? al_map_rgb(255,255,0) : al_map_rgb(255,255,255);
-
-    ALLEGRO_COLOR quit_color =
-        !restart_selected ? al_map_rgb(255,255,0) : al_map_rgb(255,255,255);
-
-    al_draw_text(font, restart_color, WIDTH / 2, HEIGHT - 90, ALLEGRO_ALIGN_CENTER, "Restart");
-    al_draw_text(font, quit_color, WIDTH / 2, HEIGHT - 50, ALLEGRO_ALIGN_CENTER, "Quit");
-
-    al_flip_display();
+    return true;
 }
 
 void collision(Enemy **enemies, int *numenemies, Player *player_ptr, int *dmg_arr, Projectile **projectiles, int *numshells, int *destroyed_enemy_count)
@@ -208,4 +214,94 @@ void getSaveString(char* filename) {
     strcpy(filename, BASE_SAVE_TEXT);
     strcat(filename, date_string);
     return;
+}
+
+void handlePauseMenuEvent(ALLEGRO_EVENT ev, GameState *gameState, int *pause_menu_selection, bool *running, ALLEGRO_TIMER *timer, ALLEGRO_EVENT_QUEUE *queue, char *filename,
+Player *player, Enemy **enemies, int *numenemies, Projectile **projectiles, int *numshells, int *old_numshells, int *time, int *shooting_cooldown,
+int *shots_fired, int *destroyed_enemy_count, int *old_numenemies, bool teclas[5], float *victory_credits_y_position, int* hp_by_type) {/*just a huge piece of repurpused main code
+    don't get too annoyed at the number of variables*/
+
+    if (ev.type != ALLEGRO_EVENT_KEY_DOWN) {
+        return;
+    }
+
+    switch (ev.keyboard.keycode) {
+        case ALLEGRO_KEY_UP:
+            *pause_menu_selection = (*pause_menu_selection + MENU_OPTION_COUNT - 1) % MENU_OPTION_COUNT;
+            break;
+
+        case ALLEGRO_KEY_DOWN:
+            *pause_menu_selection = (*pause_menu_selection + 1) % MENU_OPTION_COUNT;
+            break;
+
+        case ALLEGRO_KEY_ENTER:
+            switch (*pause_menu_selection) {
+                case MENU_CONTINUE:
+                    *gameState = GAME_RUNNING;
+                    al_start_timer(timer);
+                    break;
+
+                case MENU_SAVE:
+                    getSaveString(filename);
+                    saveGame(filename, player, *enemies, *numenemies);
+                    break;
+
+                case MENU_LOAD: {
+                    GameState previousGameState = *gameState;
+                    al_flush_event_queue(queue);
+                    printf("\033[31;1mEscreva o nome do seu arquivo aqui ou Q para cancelar (arquivo dentro da pasta 'saves').\n");
+                    scanf("%99s", filename);
+                    if (filename[0] == 'Q' || filename[0] == 'q') {
+                        printf("Carregamento cancelado.\n");
+                    } else if (loadGame(filename, player, enemies, numenemies, hp_by_type)) {
+                        *gameState = GAME_RUNNING;
+                        *destroyed_enemy_count = 0;
+                        *time = 0;
+                        *shooting_cooldown = 0;
+                        *shots_fired = 0;
+                        *numshells = 0;
+                        *old_numshells = 0;
+                        if (*projectiles) {
+                            free(*projectiles);
+                            *projectiles = NULL;
+                        }
+                        *old_numenemies = *numenemies;
+                        for (int k = 0; k < 5; k++) {
+                            teclas[k] = false;
+                        }
+                    } else {
+                        *gameState = previousGameState;
+                    }
+
+                    if (*gameState == GAME_RUNNING) {
+                        al_start_timer(timer);
+                    }
+                } break;
+
+                case MENU_RESET:
+                    resetGame(player, enemies, numenemies, projectiles, numshells, time);
+                    *destroyed_enemy_count = 0;
+                    *victory_credits_y_position = HEIGHT;
+                    *gameState = GAME_RUNNING;
+                    al_start_timer(timer);
+                    break;
+
+                case MENU_QUIT:
+                    *running = false;
+                    break;
+
+                default:
+                    break;
+            }
+            break;
+
+        case ALLEGRO_KEY_ESCAPE:
+        case ALLEGRO_KEY_P:
+            *gameState = GAME_RUNNING;
+            al_start_timer(timer);
+            break;
+
+        default:
+            break;
+    }
 }

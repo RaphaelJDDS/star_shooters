@@ -8,6 +8,5 @@ Enemy* spawnEnemies(Enemy* enemies, int* numenemies, int timer, int* intervals, 
 Enemy* initEnemies(Enemy* enemies, int* numenemies, int* old_num);
 Enemy* despawnEnemies(Enemy* enemies, int* numenemies, Player* player_ptr, int* dmg_arr, int collided_idx);
 int moveEnemies(Enemy* enemies, int* numenemies);
-void drawEnemies(Enemy* enemies, int* numenemies, ALLEGRO_BITMAP* asteroid);
 
 #endif // ENEMIES_H

@@ -7,12 +7,13 @@ Ele introduz conceitos fundamentais de desenvolvimento de jogos:
 */
 
 #include "central_includes.h"
+#include "render.h"
 
-#include "enemies.c"
-#include "player.c"
-#include "projectiles.c"
-#include "game_loop.c"
-
+#include "render.h"
+#include "enemies.h"
+#include "player.h"
+#include "projectiles.h"
+#include "game_loop.h"
 
 int main() {
     // 1. Inicializa��o dos m�dulos do Allegro
@@ -52,15 +53,15 @@ int main() {
 
     ALLEGRO_BITMAP *asteroid = al_load_bitmap("../../sprites/asteroid.jpg");
     if (!asteroid) { printf("Erro ao carregar sprite.\n"); return -1; }
-    al_convert_mask_to_alpha(asteroid, al_map_rgb(255, 0, 255));
+    al_convert_mask_to_alpha(asteroid, al_map_rgb(0, 0, 0));
 
     ALLEGRO_BITMAP *spaceship = al_load_bitmap("../../sprites/gplayer_ship.png");
     if (!spaceship) { printf("Erro ao carregar sprite.\n"); return -1; }
-    al_convert_mask_to_alpha(spaceship, al_map_rgb(255, 0, 255));
+    al_convert_mask_to_alpha(spaceship, al_map_rgb(0, 0, 0));
 
-    ALLEGRO_BITMAP *shell = al_load_bitmap("../../sprites/projectile.jpg");
+    ALLEGRO_BITMAP *shell = al_load_bitmap("../../sprites/projectile.png");
     if (!shell) { printf("Erro ao carregar sprite.\n"); return -1; }
-    al_convert_mask_to_alpha(shell, al_map_rgb(255, 0, 255));
+    al_convert_mask_to_alpha(shell, al_map_rgb(255, 255, 255));
 
     // 3. Inicializa��o de Vari�veis de Controle
     bool running = true;
@@ -70,24 +71,18 @@ int main() {
     int mouse_x = 0, mouse_y = 0;
     ALLEGRO_EVENT ev;
 
+    int pause_menu_selection = MENU_CONTINUE;
+
     // Vetor de booleanos para rastrear quais teclas est�o pressionadas agora
     bool teclas[5] = {false, false, false, false, false};
 
     // Instanciando e configurando nosso personagem
-    Personagem p1;
-    p1.x = (WIDTH - SPRITE_SIZE) / 2.0;
-    p1.y = HEIGHT - SPRITE_SIZE - 80.0;
-    p1.velocidade = 3.0;  // Anda 3 pixels a cada quadro (180 pixels por segundo)
-    p1.frame = 0;
-    p1.movement = 3; // Come�a olhando para baixo (na sua imagem, � a linha 3)
-    p1.timer = 0.0;
-    p1.delay = 0.15;      // 150ms entre cada frame de anima��o
 
     al_start_timer(timer);
 
     bool restart_selected = true;
     GameState gameState = GAME_RUNNING;
-    int intervals[] = {100, 120, 130};
+    int intervals[] = {600, 1800, 6000};
     int numenemies = 0;
     int numshells = 0;
     int old_numshells;
@@ -95,7 +90,9 @@ int main() {
     int time = 0;
     int shooting_cooldown = 0;
     const int base_reload = 8;
+    const int long_reload = 60; // 1 second at 60 FPS after 10 shots
     int reload = base_reload;
+    int shots_fired = 0;
 
     int destroyed_enemy_count = 0;
     float victory_credits_y_position = HEIGHT;
@@ -111,12 +108,78 @@ int main() {
     enemies = spawnEnemies(enemies, &numenemies, 0, intervals, &old_numenemies);
     enemies = initEnemies(enemies, &numenemies, &old_numenemies);
     int dmg_arr[] = {10, 20, 40};
+    int hp_by_type[] = {40, 70, 100};//ended up being useless lol. Gameplay much better without it
+
 
     char filename[100];
     // 4. Loop Principal
     while (running) {
         al_wait_for_event(queue, &ev);
-        if (gameState == GAME_OVER || gameState == GAME_VICTORY) {
+
+        if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            if (gameState == GAME_RUNNING) {
+                if (ev.keyboard.keycode == ALLEGRO_KEY_F5) {
+                    getSaveString(filename);
+                    printf("%s", filename);
+                    saveGame(filename, &player, enemies, numenemies);
+                    redraw = true;
+                    continue;
+                }
+
+                if (ev.keyboard.keycode == ALLEGRO_KEY_F9) {
+                    GameState previousGameState = gameState;
+                    al_stop_timer(timer);
+                    al_flush_event_queue(queue);
+                    printf("\033[31;1mEscreva o nome do seu arquivo aqui ou Q para cancelar (arquivo dentro da pasta 'saves').\n");
+                    scanf("%99s", filename);
+                    al_start_timer(timer);
+                    if (filename[0] == 'Q' || filename[0] == 'q') {
+                        printf("Carregamento cancelado.\n");
+                        gameState = previousGameState;
+                        redraw = true;
+                        continue;
+                    }
+
+                    if (loadGame(filename, &player, &enemies, &numenemies, hp_by_type)) {
+                        gameState = GAME_RUNNING;
+                        destroyed_enemy_count = 0;
+                        time = 0;
+                        shooting_cooldown = 0;
+                        shots_fired = 0;
+                        numshells = 0;
+                        old_numshells = 0;
+                        if (projectiles) {
+                            free(projectiles);
+                            projectiles = NULL;
+                        }
+                        old_numenemies = numenemies;
+                        for (int k = 0; k < 5; k++) {
+                            teclas[k] = false;
+                        }
+                    } else {
+                        gameState = previousGameState;
+                    }
+                    redraw = true;
+                    continue;
+                }
+
+                if (ev.keyboard.keycode == ALLEGRO_KEY_P) {
+                    gameState = GAME_PAUSED;
+                    pause_menu_selection = MENU_CONTINUE;
+                    al_stop_timer(timer);
+                    redraw = true;
+                    continue;
+                }
+            }
+        }
+
+        if (gameState == GAME_PAUSED) {
+            handlePauseMenuEvent(ev, &gameState, &pause_menu_selection, &running, timer, queue,
+                                 filename, &player, &enemies, &numenemies,  &projectiles,
+                                 &numshells, &old_numshells, &time, &shooting_cooldown, &shots_fired,
+                                 &destroyed_enemy_count, &old_numenemies,teclas, &victory_credits_y_position, hp_by_type);
+            redraw = true;
+        } else if (gameState == GAME_OVER || gameState == GAME_VICTORY) {
             switch (ev.type) {
                 case ALLEGRO_EVENT_KEY_DOWN:
                     if (ev.keyboard.keycode == ALLEGRO_KEY_UP ||
@@ -126,15 +189,7 @@ int main() {
 
                     if (ev.keyboard.keycode == ALLEGRO_KEY_ENTER) {
                         if (restart_selected) {
-                            resetGame(
-                                &player,
-                                &enemies,
-                                &numenemies,
-                                &projectiles,
-                                &numshells,
-                                &time
-                            );
-
+                            resetGame(&player, &enemies, &numenemies, &projectiles, &numshells, &time);
                             destroyed_enemy_count = 0;
                             victory_credits_y_position = HEIGHT;
                             gameState = GAME_RUNNING;
@@ -188,11 +243,6 @@ int main() {
                         printf("%s", filename);
                         saveGame(filename, &player, enemies, numenemies);
                     }
-                    if (ev.keyboard.keycode == ALLEGRO_KEY_F9) {
-                        printf("\033[31;Escreva o nome do seu arquivo aqui (arquivo dentro da pasta 'saves').\n");
-                        scanf("%s", filename);
-                        loadGame(filename, &player, &enemies, &numenemies);
-                    }
                     break;
 
                 // QUANDO A TECLA � SOLTA: Marcamos como falsa
@@ -206,27 +256,33 @@ int main() {
 
                 // O TIMER CONTROLA A F�SICA E A ANIMA��O (Roda 60 vezes por segundo)
                 case ALLEGRO_EVENT_TIMER:
-                    // Atualiza a posi��o e mapeia para a linha correta do seu sprite.png
-                    if (teclas[CIMA]) { p1.y -= p1.velocidade; p1.movement = 2; }       // Linha 2 = Cima
-                    if (teclas[BAIXO]) { p1.y += p1.velocidade; p1.movement = 3; }      // Linha 3 = Baixo
-                    if (teclas[ESQUERDA]) { p1.x -= p1.velocidade; p1.movement = 0; }   // Linha 0 = Esquerda
-                    if (teclas[DIREITA]) { p1.x += p1.velocidade; p1.movement = 1; }    // Linha 1 = Direita
-
-                    // Limita o personagem para n�o sair da tela
-                    if (p1.x < 0) p1.x = 0;
-                    if (p1.x > WIDTH - SPRITE_SIZE) p1.x = WIDTH - SPRITE_SIZE;
-                    if (p1.y < 0) p1.y = 0;
-                    if (p1.y > HEIGHT - SPRITE_SIZE) p1.y = HEIGHT - SPRITE_SIZE;
-
                     movePlayer(&player, teclas);
                     moveEnemies(enemies, &numenemies);
                     moveShells(projectiles, &numshells);
 
-                    intervals[2] = 130 - time / 60;
-                    if (intervals[2] < 30) intervals[2] = 30;
+                    intervals[0] += -time/300 + time*time/360000;
+                    if(intervals[0] < 100) intervals[0] = 100;
+                    intervals[1] -= time/300;
+                    if(intervals[1] < 200) intervals[1] = 200;
+                    intervals[2] -= time / 600;//increases boss spawn frequency
+                    if (intervals[2] < 300) intervals[2] = 300;
 
                     int current_reload = teclas[SHIFT] ? base_reload + 4 : base_reload;
+                    if (shots_fired >= 10) {
+                        current_reload = long_reload;
+                    }
+
+                    int old_numshells_before_fire = numshells;
                     projectiles = spawnShells(projectiles, &shooting_cooldown, current_reload, &numshells, &old_numshells, teclas);
+                    if (numshells > old_numshells_before_fire) {
+                        // Count one shot only when a new projectile is spawned.
+                        shots_fired++;
+                    }
+                    if (shots_fired >= 10 && shooting_cooldown >= long_reload) {
+                        // After the longer reload period, reset the shot count.
+                        shots_fired = 0;
+                    }
+
                     projectiles = initShells(projectiles, player, &numshells, &old_numshells);
                     projectiles = despawnShells(projectiles, &numshells, -1);
 
@@ -234,6 +290,7 @@ int main() {
                     enemies = initEnemies(enemies, &numenemies, &old_numenemies);
                     enemies = despawnEnemies(enemies, &numenemies, &player, dmg_arr, -1);
 
+                    //collision logic
                     collision(&enemies, &numenemies, &player, dmg_arr, &projectiles, &numshells, &destroyed_enemy_count);
                     if (player.HP <= 0) {
                         gameState = GAME_OVER;
@@ -241,23 +298,16 @@ int main() {
                     if (destroyed_enemy_count >= 100) {
                         gameState = GAME_VICTORY;
                     }
-                    // L�gica de Anima��o: S� avan�a os frames se o personagem estiver se movendo
-                    if (teclas[CIMA] || teclas[BAIXO] || teclas[ESQUERDA] || teclas[DIREITA]) {
-                        p1.timer += 1.0 / 60.0;
-                        if (p1.timer >= p1.delay) {
-                            p1.frame = (p1.frame + 1) % SPRITE_COLS;
-                            p1.timer = 0.0;
-                        }
-                    } else {
-                        p1.frame = 0; // Retorna � pose de repouso se estiver parado
-                    }
 
                     redraw = true; // Informa que a l�gica terminou e podemos desenhar
                     break;
             }
         }
+
+    if (gameState == GAME_RUNNING) {
         time++;
         shooting_cooldown++;
+    }
 
         // 5. Redesenho da Tela
         if (redraw && al_is_event_queue_empty(queue)) {
@@ -270,11 +320,17 @@ int main() {
                 drawVictoryScreen(font, restart_selected, victory_credits_y_position);
                 continue;
             }
+            if (gameState == GAME_PAUSED) {
+                drawPauseMenu(font, pause_menu_selection);
+                continue;
+            }
             al_clear_to_color(al_map_rgb(0, 0, 0));
 
 
             al_draw_textf(font, al_map_rgb(255,255,255), 10, 20, 0,
-                          "Vitality: %.2f/100", player.HP);
+                          "HP: %.2f/100", player.HP);
+            al_draw_textf(font, al_map_rgb(255,255,255), 10, HEIGHT - 40, 0,
+                          "Kills: %d/100", destroyed_enemy_count);
 
             drawShells(projectiles, &numshells, shell);
             drawEnemies(enemies, &numenemies, asteroid);
