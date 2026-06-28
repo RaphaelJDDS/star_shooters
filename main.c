@@ -341,6 +341,7 @@ int main() {
 
     // 6. Limpeza de Mem�ria
     free(enemies);
+    free(projectiles);
 
     al_destroy_sample_instance(sample_instance);
     al_destroy_sample(sample);
